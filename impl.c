@@ -31,7 +31,7 @@
 
 static char shortopts[] =
 
-    "eh::f:r:db:vt::p:l:s:";
+    "eh::f:o:r:db:vt::p:l:s:";
 
 #if defined(HAVE_GETOPT_LONG)
 static struct option longopts[] =
@@ -39,6 +39,8 @@ static struct option longopts[] =
     { "externalgui",    no_argument, NULL, 'e' },
     { "help",     optional_argument, NULL, 'h' },
     { "config",   required_argument, NULL, 'f' },
+    { "output",   required_argument, NULL, 'o' },
+    { "logfile",  required_argument, NULL, 'o' },
     { "rcfile",   required_argument, NULL, 'r' },
     { "daemon",         no_argument, NULL, 'd' },
     { "herclogo", required_argument, NULL, 'b' },
@@ -1326,6 +1328,12 @@ int     rc;
         return 1;
     }
 
+    sysblk.config_processed = true;
+
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+    txf_model_warning( FACILITY_ENABLED_ARCH( 073_TRANSACT_EXEC, ARCH_900_IDX ));
+#endif
+
     /* Process the .rc file synchronously when in daemon mode. */
     /* Otherwise Start up the RC file processing thread.       */
     if (sysblk.daemon_mode)
@@ -1521,6 +1529,11 @@ static int process_args( int argc, char* argv[] )
             case 'f':
 
                 cfgorrc[ want_cfg ].filename = optarg;
+                break;
+
+            case 'o':
+
+                log_sethrdcpy( optarg );
                 break;
 
             case 'r':

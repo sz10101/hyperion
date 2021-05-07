@@ -1,4 +1,4 @@
-/* W32UTIL.C    (C) Copyright "Fish" (David B. Trout), 2005-2012     */
+/* W32UTIL.C    (C) Copyright "Fish" (David B. Trout), 2005-2021     */
 /*              (C) Copyright TurboHercules, SAS 2010-2011           */
 /*              Windows porting functions                            */
 /*                                                                   */
@@ -4175,7 +4175,7 @@ DLL_EXPORT pid_t w32_poor_mans_fork ( char* pszCommandLine, int* pnWriteToChildS
         return -1;
     }
 
-    SET_THREAD_NAME_ID( dwThreadId, "w32_read_piped_process_stdOUT_output_thread" );
+    SET_THREAD_NAME_ID( dwThreadId, "w32_pipe_stdOUT" );
 
     //////////////////////////////////////////////////
     // Stderr...
@@ -4218,7 +4218,7 @@ DLL_EXPORT pid_t w32_poor_mans_fork ( char* pszCommandLine, int* pnWriteToChildS
         return -1;
     }
 
-    SET_THREAD_NAME_ID( dwThreadId, "w32_read_piped_process_stdERR_output_thread" );
+    SET_THREAD_NAME_ID( dwThreadId, "w32_pipe_stdERR" );
 
     // Piped process capture handling...
 

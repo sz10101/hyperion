@@ -1,4 +1,5 @@
 /* HEXTERNS.H   (C) Copyright Roger Bowler, 1999-2012                */
+/*              (C) and others 2013-2021                             */
 /*                    Hercules function prototypes...                */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -215,7 +216,6 @@ LOADPARM_DLL_IMPORT char *str_manufacturer();
 int set_plant(char *name);
 LOADPARM_DLL_IMPORT char *str_plant();
 int set_model(char *m1, char* m2, char* m3, char* m4);
-LOADPARM_DLL_IMPORT char **str_model();
 char *str_modelhard();
 char *str_modelcapa();
 char *str_modelperm();
@@ -255,6 +255,9 @@ IMPL_DLL_IMPORT COMMANDHANDLER getCommandHandler(void);
 
 /* Functions in module timer.c */
 void* timer_thread( void* argp );
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+void* rubato_thread( void* argp );
+#endif
 
 /* Functions in module clock.c */
 void update_TOD_clock (void);

@@ -1,4 +1,5 @@
 /* IMPL.C       (C) Copyright Roger Bowler, 1999-2012                */
+/*              (C) and others 2013-2021                             */
 /*              Hercules Initialization Module                       */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -605,8 +606,19 @@ void* log_do_callback( void* dummy )
 
     UNREFERENCED( dummy );
 
-    while ((msglen = log_read( &msgbuf, &msgidx, LOG_BLOCK )))
-        log_callback( msgbuf, msglen );
+    while (!sysblk.shutfini && logger_isactive())
+    {
+        msglen = log_read( &msgbuf, &msgidx, LOG_NOBLOCK );
+
+        if (msglen)
+        {
+            log_callback( msgbuf, msglen );
+            continue;
+        }
+
+        /* wait a bit for new message(s) to arrive before retrying */
+        usleep( PANEL_REFRESH_RATE_FAST * 1000 );
+    }
 
     /* Let them know logger thread has ended */
     log_callback( NULL, 0 );
@@ -824,6 +836,10 @@ int     rc;
 
     sysblk.timerint = DEF_TOD_UPDATE_USECS;
 
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+    sysblk.txf_timerint = sysblk.timerint;
+#endif
+
 #if defined( _FEATURE_ECPSVM )
     sysblk.ecpsvm.available = 0;
     sysblk.ecpsvm.level = 20;
@@ -868,6 +884,9 @@ int     rc;
     initialize_lock( &sysblk.crwlock  );
     initialize_lock( &sysblk.ioqlock  );
     initialize_lock( &sysblk.dasdcache_lock );
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+    initialize_lock( &sysblk.rublock );
+#endif
 
     initialize_condition( &sysblk.scrcond );
     initialize_condition( &sysblk.ioqcond );
@@ -1329,10 +1348,19 @@ int     rc;
     }
 
     sysblk.config_processed = true;
+    sysblk.cfg_timerint = sysblk.timerint;
 
 #if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
-    txf_model_warning( FACILITY_ENABLED_ARCH( 073_TRANSACT_EXEC, ARCH_900_IDX ));
-#endif
+
+    if (FACILITY_ENABLED_ARCH( 073_TRANSACT_EXEC, ARCH_900_IDX ))
+    {
+        txf_model_warning( true );
+        txf_set_timerint( true );
+    }
+    else
+        txf_set_timerint( false );
+
+#endif /* defined( _FEATURE_073_TRANSACT_EXEC_FACILITY ) */
 
     /* Process the .rc file synchronously when in daemon mode. */
     /* Otherwise Start up the RC file processing thread.       */

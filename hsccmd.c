@@ -2,6 +2,7 @@
 /*              (C) Copyright Jan Jaeger, 1999-2012                  */
 /*              (C) Copyright "Fish" (David B. Trout), 2002-2009     */
 /*              (C) Copyright TurboHercules SAS, 2011                */
+/*              (C) and others 2013-2021                             */
 /*              Execute Hercules System Commands                     */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -157,8 +158,6 @@ static void* deadlocks_1( void* parg)
     UNREFERENCED( parg );
 
     // 1 acq a, then b
-    // 2 acq b, then c
-    // 3 acq c, then a
 
     obtain_lock( &deadlocks_a );
     {
@@ -178,9 +177,7 @@ static void* deadlocks_2( void* parg)
 {
     UNREFERENCED( parg );
 
-    // 1 acq a, then b
     // 2 acq b, then c
-    // 3 acq c, then a
 
     obtain_lock( &deadlocks_b );
     {
@@ -200,8 +197,6 @@ static void* deadlocks_3( void* parg)
 {
     UNREFERENCED( parg );
 
-    // 1 acq a, then b
-    // 2 acq b, then c
     // 3 acq c, then a
 
     obtain_lock( &deadlocks_c );
@@ -254,9 +249,9 @@ int $test_cmd(int argc, char *argv[],char *cmdline)
             set_lock_name( &deadlocks_b, "b" );
             set_lock_name( &deadlocks_c, "c" );
 
-            VERIFY( create_thread( &tid, DETACHED, deadlocks_1, 0, "#1"  ) == 0);
+            VERIFY( create_thread( &tid, DETACHED, deadlocks_1, 0, "#1" ) == 0);
             VERIFY( create_thread( &tid, DETACHED, deadlocks_2, 0, "#2" ) == 0);
-            VERIFY( create_thread( &tid, DETACHED, deadlocks_3, 0, "#3"  ) == 0);
+            VERIFY( create_thread( &tid, DETACHED, deadlocks_3, 0, "#3" ) == 0);
         }
         else if (CMD( argv[1], LOCKS, 5 ))
         {
@@ -2094,7 +2089,7 @@ int ctc_cmd( int argc, char *argv[], char *cmdline )
     }
     else
     {
-        int i;
+        int acount;
         DEVGRP* pDEVGRP;
         DEVBLK* pDEVBLK;
 
@@ -2106,37 +2101,41 @@ int ctc_cmd( int argc, char *argv[], char *cmdline )
         }
 
         pDEVGRP = dev->group;
+        acount = 0;
 
         if (CTC_CTCI == dev->ctctype)
         {
-            for (i=0; i < pDEVGRP->acount; i++)
+            if (pDEVGRP && pDEVGRP->acount)  /* CTCI should be a group of two devices. */
             {
-                pDEVBLK = pDEVGRP->memdev[i];
+                pDEVBLK = pDEVGRP->memdev[0];
                 pCTCBLK = pDEVBLK->dev_data;
                 pCTCBLK->fDebug = onoff;
+                acount = pDEVGRP->acount;
             }
         }
-        else if (CTC_LCS == dev->ctctype)
+        else if (CTC_LCS == dev->ctctype)  /* LCS should be a group of one or more devices. */
         {
-            for (i=0; i < pDEVGRP->acount; i++)
+            if (pDEVGRP && pDEVGRP->acount)
             {
-                pDEVBLK = pDEVGRP->memdev[i];
+                pDEVBLK = pDEVGRP->memdev[0];
                 pLCSDEV = pDEVBLK->dev_data;
                 pLCSBLK = pLCSDEV->pLCSBLK;
                 pLCSBLK->fDebug = onoff;
+                acount = pDEVGRP->acount;
             }
         }
-        else if (CTC_PTP == dev->ctctype)
+        else if (CTC_PTP == dev->ctctype)  /* PTP should be a group of two devices. */
         {
-            for (i=0; i < pDEVGRP->acount; i++)
+            if (pDEVGRP && pDEVGRP->acount)
             {
-                pDEVBLK = pDEVGRP->memdev[i];
+                pDEVBLK = pDEVGRP->memdev[0];
                 pPTPATH = pDEVBLK->dev_data;
                 pPTPBLK = pPTPATH->pPTPBLK;
                 pPTPBLK->uDebugMask = mask;
+                acount = pDEVGRP->acount;
             }
         }
-        else if (CTC_CTCE == dev->ctctype)
+        else if (CTC_CTCE == dev->ctctype)  /* CTCE is not grouped. */
         {
             if (onoff)
             {
@@ -2153,17 +2152,24 @@ int ctc_cmd( int argc, char *argv[], char *cmdline )
         }
         else
         {
+            /* HHC02209 "%1d:%04X device is not a %s" */
             WRMSG(HHC02209, "E", lcss, devnum, "supported CTCI, LSC, PTP or CTCE" );
             return -1;
         }
 
         {
-          char buf[128];
-          MSGBUF( buf, "%s for %s device %1d:%04X%s",
+          char buf1[32] = {0};
+          char buf2[128];
+          if (acount) {
+            MSGBUF( buf1, " group (%d devices)", acount);
+          }
+          MSGBUF( buf2, "%s for %s device %1d:%04X%s",
                   startup ? "STARTUP" : onoff ? "ON" : "OFF",
                   CTC_CTCE == dev->ctctype ? "CTCE" : CTC_LCS == dev->ctctype ? "LCS" : CTC_PTP == dev->ctctype ? "PTP" : "CTCI",
-                  lcss, devnum, CTC_CTCE != dev->ctctype ? "pair" : "" );
-          WRMSG(HHC02204, "I", "CTC DEBUG", buf);
+                  lcss, devnum,
+                  buf1 );
+          /* HHC02204 "%-14s set to %s" */
+          WRMSG(HHC02204, "I", "CTC DEBUG", buf2);
         }
     }
 
@@ -4577,88 +4583,102 @@ int codepage_cmd( int argc, char* argv[], char* cmdline )
 /* model config statement                                            */
 /* operands: hardware_model [capacity_model [perm_model temp_model]] */
 /*-------------------------------------------------------------------*/
-int stsi_model_cmd(int argc, char *argv[], char *cmdline)
+int stsi_model_cmd( int argc, char* argv[], char* cmdline )
 {
-    const char *model_name[4] = { "hardware", "capacity", "perm", "temp" };
+    const char* model_name[4] = { "hardware", "capacity", "perm", "temp" };
+    char*            model[4] = { "",         "",         "",     "" };
 
-    UNREFERENCED(cmdline);
-
+    UNREFERENCED( cmdline );
     UPPER_ARGV_0( argv );
 
     /* Update model name if operand is specified */
 
     if (argc > 1)
     {
-        int rc;
-        int m;
-        int n;
-        char *model[4] = { "", "", "", "" };
+        int rc, m, n;
 
         /* Validate argument count */
 
-        if ( argc > 5 )
+        if (argc > 5)
         {
+            // "Invalid number of arguments for %s"
             WRMSG( HHC01455, "E", argv[0] );
             return -1;
         }
 
         /* Validate and set new model and capacity
            numbers according to arguments */
-        for ( m = 0, n = 1; n < argc; m++, n++ )
+        for (m=0, n=1; n < argc; m++, n++)
         {
-            size_t i;
-            size_t len;
+            size_t len, i;
 
-            if ( argv[n] == NULL )
+            if (!argv[n])
                 break;
+
             model[m] = argv[n];
             len = strlen( model[m] );
 
-            if ( len > 16 )
+            if (len > 16)
             {
+                // "Invalid argument %s%s"
                 WRMSG( HHC02205, "E", model[n], "; argument > 16 characters" );
                 return -1;
             }
 
+            /* Normal handling?  (i.e. is special handling character
+               "*" or "=" NOT specified for this field?)
+            */
             if (!(len == 1 && (model[m][0] == '*' || model[m][0] == '=')))
             {
                 for (i=0; i < len; i++)
                 {
-                    if (!isalnum(model[m][i]))
+                    if (!isalnum( model[m][i] ) ||
+                       (!isupper( model[m][i] ) && !isdigit( model[m][i] )))
                     {
                         char msgbuf[64];
+                        MSGBUF( msgbuf, "%s-model = <%s>", model_name[m], model[m] );
 
-                        MSGBUF( msgbuf, "%s-model = <%s>", model_name[m], model[m]);
-                        WRMSG( HHC02205, "E", msgbuf, "; argument contains an invalid character"  );
+                        // "Invalid argument %s%s"
+                        WRMSG( HHC02205, "E", msgbuf, "; argument contains an invalid character (0-9 and uppercase A-Z only)"  );
                         return -1;
                     }
                 }
             }
         }
 
-        if ((rc = set_model(model[0], model[1], model[2], model[3])) != 0)
+        /* TRY setting their requested values... */
+
+        if ((rc = set_model( model[0], model[1], model[2], model[3] )) != 0)
         {
-            if ( rc > 0 && rc <= 4 )
+            /* A non-zero return code indicates which field was bad */
+
+            if (rc > 0 && rc <= 4)
             {
                 char msgbuf[64];
+                MSGBUF( msgbuf, "%s-model = <%s>", model_name[rc-1], model[rc-1] );
 
-                MSGBUF( msgbuf, "%s-model = <%s>", model_name[rc-1], model[rc-1]);
-                WRMSG( HHC02205, "E", msgbuf, "; Characters not valid for field. 0-9 or A-Z only" );
+                // "Invalid argument %s%s"
+                WRMSG( HHC02205, "E", msgbuf, "; argument contains an invalid character (0-9 and uppercase A-Z only)" );
             }
             else
+                // "Invalid argument %s%s"
                 WRMSG( HHC02205, "E", argv[0], "" );
+
             return -1;
         }
 
-        if ( MLVL(VERBOSE) )
+        /* Success: show them the results */
+
+        if (MLVL( VERBOSE ))
         {
             char msgbuf[128];
             MSGBUF( msgbuf, "hardware(%s) capacity(%s) perm(%s) temp(%s)",
                             str_modelhard(), str_modelcapa(), str_modelperm(), str_modeltemp() );
+            // "%-14s set to %s"
             WRMSG( HHC02204, "I", "MODEL", msgbuf );
         }
     }
-    else
+    else /* (no arguments == query current values) */
     {
         char msgbuf[128];
         MSGBUF( msgbuf, "hardware(%s) capacity(%s) perm(%s) temp(%s)",
@@ -4673,47 +4693,55 @@ int stsi_model_cmd(int argc, char *argv[], char *cmdline)
 /*-------------------------------------------------------------------*/
 /* plant config statement                                            */
 /*-------------------------------------------------------------------*/
-int stsi_plant_cmd(int argc, char *argv[], char *cmdline)
+int stsi_plant_cmd( int argc, char* argv[], char* cmdline )
 {
-    UNREFERENCED(cmdline);
-
+    UNREFERENCED( cmdline );
     UPPER_ARGV_0( argv );
 
     /* Update plant name if operand is specified */
-    if ( argc > 2 )
+    if (argc > 2)
     {
+        // "Invalid number of arguments for %s"
         WRMSG( HHC01455, "E", argv[0] );
         return -1;
     }
-    if ( argc == 1 )
+
+    if (argc == 1)  /* (no argument == query current value?) */
     {
+        // "%-14s: %s"
         WRMSG( HHC02203, "I", argv[0], str_plant() );
     }
     else
     {
         size_t i;
 
-        if ( strlen(argv[1]) > 4 )
+        if (strlen( argv[1] ) > 4)
         {
+            // "Invalid argument %s%s"
             WRMSG( HHC02205, "E", argv[1], "; argument > 4 characters" );
             return -1;
         }
 
-        for ( i = 0; i < strlen(argv[1]); i++ )
+        for (i=0; i < strlen( argv[1] ); i++)
         {
-            if ( isalnum(argv[1][i]) )
+            if (isalnum( argv[1][i] ) &&
+               (isupper( argv[1][i] ) || isdigit( argv[1][i] )))
                 continue;
-            WRMSG( HHC02205, "E", argv[1], "; argument contains invalid characters" );
+
+            // "Invalid argument %s%s"
+            WRMSG( HHC02205, "E", argv[1], "; argument contains an invalid character (0-9 and uppercase A-Z only)" );
             return -1;
         }
 
-        if ( set_plant(argv[1]) < 0 )
+        if (set_plant( argv[1] ) < 0)
         {
-            WRMSG( HHC02205, "E", argv[1], "; argument contains invalid characters" );
+            // "Invalid argument %s%s"
+            WRMSG( HHC02205, "E", argv[1], "; argument contains an invalid character (0-9 and uppercase A-Z only)" );
             return -1;
         }
 
-        if ( MLVL(VERBOSE) )
+        if (MLVL( VERBOSE ))
+            // "%-14s set to %s"
             WRMSG( HHC02204, "I", argv[0], str_plant() );
     }
 
@@ -4723,49 +4751,55 @@ int stsi_plant_cmd(int argc, char *argv[], char *cmdline)
 /*-------------------------------------------------------------------*/
 /* manufacturer config statement                                     */
 /*-------------------------------------------------------------------*/
-int stsi_manufacturer_cmd(int argc, char *argv[], char *cmdline)
+int stsi_manufacturer_cmd( int argc, char* argv[], char* cmdline )
 {
-    UNREFERENCED(cmdline);
-
+    UNREFERENCED( cmdline );
     UPPER_ARGV_0( argv );
 
     /* Update manufacturer name if operand is specified */
-    if ( argc > 2 )
+    if (argc > 2)
     {
+        // "Invalid number of arguments for %s"
         WRMSG( HHC01455, "E", argv[0] );
         return -1;
     }
 
-    if ( argc == 1 )
+    if (argc == 1)  /* (no argument == query current value?) */
     {
+        // "%-14s: %s"
         WRMSG( HHC02203, "I", argv[0], str_manufacturer() );
     }
     else
     {
         size_t i;
 
-        if ( strlen(argv[1]) > 16 )
+        if (strlen (argv[1] ) > 16)
         {
+            // "Invalid argument %s%s"
             WRMSG( HHC02205, "E", argv[1], "; argument > 16 characters" );
             return -1;
         }
 
-        for ( i = 0; i < strlen(argv[1]); i++ )
+        for (i=0; i < strlen( argv[1] ); i++)
         {
-            if ( isalnum(argv[1][i]) )
+            if (isalnum( argv[1][i] ) &&
+               (isupper( argv[1][i] ) || isdigit( argv[1][i] )))
                 continue;
 
-            WRMSG( HHC02205, "E", argv[1], "; argument contains invalid characters" );
+            // "Invalid argument %s%s"
+            WRMSG( HHC02205, "E", argv[1], "; argument contains an invalid character (0-9 and uppercase A-Z only)" );
             return -1;
         }
 
-        if ( set_manufacturer(argv[1]) < 0 )
+        if (set_manufacturer( argv[1] ) < 0)
         {
-            WRMSG( HHC02205, "E", argv[1], "; argument contains invalid characters");
+            // "Invalid argument %s%s"
+            WRMSG( HHC02205, "E", argv[1], "; argument contains an invalid character (0-9 and uppercase A-Z only)");
             return -1;
         }
 
-        if ( MLVL(VERBOSE) )
+        if (MLVL( VERBOSE ))
+            // "%-14s set to %s"
             WRMSG( HHC02204, "I", argv[0], str_manufacturer() );
     }
 

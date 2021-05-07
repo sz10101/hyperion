@@ -1,4 +1,4 @@
-/* TRANSACT.C   (C) Copyright "Fish" (David B. Trout), 2017-2020     */
+/* TRANSACT.C   (C) Copyright "Fish" (David B. Trout), 2017-2021     */
 /*              (C) Copyright Bob Wood, 2019-2020                    */
 /*      Defines Transactional Execution Facility instructions        */
 /*                                                                   */
@@ -79,18 +79,12 @@
   #undef  PTT_TXF
   #define PTT_TXF( ... )              // (nothing)
 #endif
-
 #endif // DID_TXF_DEBUGGING
 
 #if defined( FEATURE_049_PROCESSOR_ASSIST_FACILITY )
 /*-------------------------------------------------------------------*/
 /* B2E8 PPA   - Perform Processor Assist                     [RRF-c] */
 /*-------------------------------------------------------------------*/
-
-#define PPA_MAX_HELP_THRESHOLD  16
-#define PPA_MED_HELP_THRESHOLD   8
-#define PPA_MIN_HELP_THRESHOLD   1
-
 DEF_INST( perform_processor_assist )
 {
 int     r1, r2;                         /* Operand register numbers  */
@@ -112,27 +106,7 @@ U32     abort_count;                    /* Transaction Abort count   */
     {
     case 1: // Transaction Abort Assist
     {
-        /* Provide least amount of assistance required */
-        if (abort_count >= PPA_MAX_HELP_THRESHOLD)
-        {
-            /* Provide maximal assistance */
-            // TODO... do something useful
-        }
-        else if (abort_count >= PPA_MED_HELP_THRESHOLD)
-        {
-            /* Provide medium assistance */
-            // TODO... do something useful
-        }
-        else if (abort_count >= PPA_MIN_HELP_THRESHOLD)
-        {
-            /* Provide minimal assistance */
-            // TODO... do something useful
-        }
-        else // zero!
-        {
-            /* Provide NO assistance at all */
-            // (why are you wasting my time?!)
-        }
+        regs->txf_PPA = abort_count;
         return;
     }
 #if defined( FEATURE_081_PPA_IN_ORDER_FACILITY )
@@ -356,9 +330,6 @@ int         txf_tnd, txf_tac, slot;
             /* Set PIFC for this nesting level */
             regs->txf_pifc = regs->txf_pifctab[ txf_tnd - 1 ];
 
-            /* Reset CONSTRAINED trans instruction fetch constraint */
-            ARCH_DEP( reset_txf_aie )( regs );
-
             /* Remain in transactional-execution mode */
             PTT_TXF( "TXF end", 0, regs->txf_contran, txf_tnd );
             RELEASE_INTLOCK( regs );
@@ -540,6 +511,12 @@ int         txf_tnd, txf_tac, slot;
 
         /* Reset abort count */
         regs->txf_aborts = 0;
+
+        /* Reset PPA assistance */
+        regs->txf_PPA = 0;
+
+        /* Reset CONSTRAINED trans instruction fetch constraint */
+        ARCH_DEP( reset_txf_aie )( regs );
 
         PERFORM_SERIALIZATION( regs );
     }
@@ -754,6 +731,9 @@ TPAGEMAP   *pmap;
         ABORT_TRANS( regs, ABORT_RETRY_PGMCHK, TAC_NESTING );
         UNREACHABLE_CODE( return );
     }
+
+    /* Count transaction */
+    atomic_update32( &sysblk.txf_counter, +1 );
 
     CONTRAN_INSTR_CHECK( regs );    /* Unallowed in CONSTRAINED mode */
 
@@ -1141,6 +1121,10 @@ int        retry;           /* Actual retry code                     */
 
     /* Count total retries for this transaction */
     regs->txf_aborts++;
+
+    /* Provide PPA assist for constrained transactions too */
+    if (regs->txf_contran)
+        regs->txf_PPA = regs->txf_aborts;
 
     /* Track total aborts by cause (TAC) */
     if (regs->txf_tac == TAC_MISC)
@@ -2015,12 +1999,13 @@ DLL_EXPORT BYTE* txf_maddr_l( const U64  vaddr,   const size_t  len,
     /* Normalize access type for TXF usage */
     txf_acctype = TXF_ACCTYPE( acctype );
 
-    /*  "The transaction's storage operands access no more than four
-         octowords. Note: LOAD ON CONDITION and STORE ON CONDITION are
-         considered to reference storage regardless of the condition
-         code." (SA22-7832-12, page 5-109)
+    /*  Constrained transactions constraint #4: "The transaction's
+        storage operands access no more than four octowords. Note:
+        LOAD ON CONDITION and STORE ON CONDITION are considered to
+        reference storage regardless of the condition code."
+        (SA22-7832-12, page 5-109)
     */
-    if (len > (4 * ZOCTOWORD_SIZE))
+    if (regs->txf_contran && len > (4 * ZOCTOWORD_SIZE))
     {
         int txf_tac = TXF_IS_FETCH_ACCTYPE() ? TAC_FETCH_OVF
                                              : TAC_STORE_OVF;
@@ -2055,6 +2040,9 @@ DLL_EXPORT BYTE* txf_maddr_l( const U64  vaddr,   const size_t  len,
 
         /* Data ends on this cache line */
         cacheidxe = endingoff >> ZCACHE_LINE_SHIFT;
+
+        if (cacheidxe > (ZCACHE_LINE_PAGE - 1))
+            cacheidxe = (ZCACHE_LINE_PAGE - 1);
     }
 
     /* Check if we have already captured this page and if not,
@@ -2526,6 +2514,58 @@ void txf_model_warning( bool txf_enabled_or_enabling_txf )
     {
         // "CPUMODEL %04X does not technically support TXF"
         WRMSG( HHC02385, "W", sysblk.cpumodel );
+    }
+}
+
+/*-------------------------------------------------------------------*/
+/* Helper function to set a proper TXF timerint value                */
+/*-------------------------------------------------------------------*/
+void txf_set_timerint( bool txf_enabled_or_enabling_txf )
+{
+    if (!sysblk.config_processed)
+        return;
+
+    if (txf_enabled_or_enabling_txf)
+    {
+        if (sysblk.timerint >= MIN_TXF_TIMERINT)
+        {
+            /* Use the user's defined timerint value for TXF */
+            sysblk.txf_timerint = sysblk.timerint;
+        }
+        else
+        {
+            // "TXF: TIMERINT %d is too small; using default of %d instead"
+            WRMSG( HHC17736, "W", sysblk.timerint, DEF_TXF_TIMERINT );
+
+            sysblk.txf_timerint = sysblk.timerint = DEF_TXF_TIMERINT;
+        }
+
+        /* Start the rubato_thread if it hasn't been started yet */
+        obtain_lock( &sysblk.rublock );
+        {
+            if (!sysblk.rubtid)
+            {
+                int rc = create_thread( &sysblk.rubtid, DETACHED,
+                     rubato_thread, NULL, RUBATO_THREAD_NAME );
+                if (rc)
+                    // "Error in function create_thread(): %s"
+                    WRMSG( HHC00102, "E", strerror( rc ));
+            }
+        }
+        release_lock( &sysblk.rublock );
+    }
+    else
+    {
+        /* Stop the rubato_thread if it's still running */
+        obtain_lock( &sysblk.rublock );
+        {
+            /* Tell rubato_thread to please exit */
+            sysblk.rubtid = 0;
+        }
+        release_lock( &sysblk.rublock );
+
+        /* Reset the timerint value back to its original value */
+        sysblk.timerint = sysblk.cfg_timerint;
     }
 }
 

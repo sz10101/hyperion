@@ -1,5 +1,6 @@
 /* MSGENU.H     (C) Copyright Bernard van der Helm, 2010-2012        */
 /*              (C) Copyright TurboHercules, SAS 2010-2011           */
+/*              (C) and others 2013-2021                             */
 /*              Header file for Hercules messages (US English)       */
 /* Message text (C) Copyright Roger Bowler and others, 1999-2011     */
 /*                                                                   */
@@ -78,7 +79,7 @@ Examples:
 /*-------------------------------------------------------------------*/
 LOGM_DLL_IMPORT void fwritemsg( const char* filename, int line, const char* func, BYTE panel, FILE* f, const char* fmt, ... ) ATTR_PRINTF( 6, 7 );
 LOGM_DLL_IMPORT void logmsg( const char* fmt, ... ) ATTR_PRINTF( 1, 2 );
-LOGM_DLL_IMPORT int  panel_command_capture( char* cmd, char** resp );
+LOGM_DLL_IMPORT int  panel_command_capture( char* cmd, char** resp, bool quiet );
 
 /*-------------------------------------------------------------------*/
 /*                    PRIMARY MESAGE MACROS                          */
@@ -782,6 +783,8 @@ LOGM_DLL_IMPORT int  panel_command_capture( char* cmd, char** resp );
 #define HHC00920 "%1d:%04X CTC: lcs device %04X not in configuration"
 #define HHC00921 "CTC: lcs device port %2.2X: %s Multicast assist enabled"
 #define HHC00922 "%1d:%04X CTC: lcs command packet received"
+#define HHC00923 "%1d:%04X CTC: lcs command reply enqueue"
+//efine HHC00924 - HHC00932 (available)
 #define HHC00933 "%1d:%04X CTC: executing command %s"
 #define HHC00934 "%1d:%04X CTC: sending packet to file %s"
 #define HHC00935 "CTC: lcs device port %2.2X: %s Checksum Offload enabled"
@@ -2328,8 +2331,8 @@ LOGM_DLL_IMPORT int  panel_command_capture( char* cmd, char** resp );
 #define HHC03984 "%s"
 #define HHC03985 "%1d:%04X %s: %s"
 #define HHC03991 "%1d:%04X %s: %s"
-#define HHC03992 "%1d:%04X %s: Code %02X: Flags %02X: Chained %02X: Count %08X: PrevCode %02X: CCWseq %d"
-#define HHC03993 "%1d:%04X %s: More %02X: Status %02X: Residual %08X"
+#define HHC03992 "%1d:%04X %s: Code %02X: Flags %02X: Count %08X: Chained %02X: PrevCode %02X: CCWseq %d"
+#define HHC03993 "%1d:%04X %s: Status %02X: Residual %08X: More %02X"
 #define HHC03994 "%1d:%04X %s: Status %02X"
 #define HHC03995 "%1d:%04X %s: %s:\n%s"
 #define HHC03996 "%1d:%04X %s: %s: %s"
@@ -2528,7 +2531,8 @@ LOGM_DLL_IMPORT int  panel_command_capture( char* cmd, char** resp );
 #define HHC17733 "MAXIMUM   =%12"PRIu64
 #define HHC17734 "%12"PRIu64"  (%4.1f%%)  Retries due to TAC %3d %s"
 #define HHC17735 "%12"PRIu64"  (%4.1f%%)  Retries due to other TAC"
-//efine HHC17736 - HHC17749 (available)
+#define HHC17736 "TXF: TIMERINT %d is too small; using default of %d instead"
+//efine HHC17737 - HHC17749 (available)
 
 // range 17750 - 17799 available
 // range 17800 - 17899 available
@@ -2571,9 +2575,9 @@ LOGM_DLL_IMPORT int  panel_command_capture( char* cmd, char** resp );
 #define HHC90020 "'%s' failed at loc=%s: rc=%d: %s"
 #define HHC90021 "%s "TIDPAT" %-15.15s %-18.18s %-18.18s"PTR_FMTx" "PTR_FMTx" %s%s"
 #define HHC90022 "Thread %-15.15s tid="TIDPAT" created on %s at %-18.18s"
-#define HHC90023 "Thread %-15.15s tid="TIDPAT" waiting since %s for lock %s = "PTR_FMTx
+#define HHC90023 "Thread %-15.15s tid="TIDPAT" waiting since %s at %s for lock %s = "PTR_FMTx
 #define HHC90024 "DEADLOCK!"
-#define HHC90025 "Thread %s waiting for lock %s held by thread %s"
+#define HHC90025 "Thread %s is stuck waiting for lock %s held by thread %s"
 #define HHC90026 "No threads found with tid "TIDPAT"."
 #define HHC90027 "Total threads running: %d"
 #define HHC90028 "lock %s was already initialized at %s"

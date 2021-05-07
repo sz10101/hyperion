@@ -1,4 +1,5 @@
 /* TRANSACT.H   (C) Copyright Bob Wood, 2019-2020                    */
+/*              (C) and others 2020-2021                             */
 /*                  Transactional-Execution consts and structs       */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -33,6 +34,12 @@
 #define  ZCACHE_LINE_PAGE           (ZPAGEFRAME_PAGESIZE/ZCACHE_LINE_SIZE)
                                       /* Cache lines per 4K page     */
 #define  ZOCTOWORD_SIZE       (8*4)   /* IBM z "octoword" size       */
+
+#define  PPA_SOME_HELP_THRESHOLD  1   /* Provide SOME assistance     */
+#define  PPA_MUCH_HELP_THRESHOLD  2   /* Provide LOTS of assistance! */
+
+#define  MIN_TXF_TIMERINT       200   /* Minimum txf_timerint value  */
+#define  DEF_TXF_TIMERINT       400   /* Default txf_timerint value  */
 
 /*-------------------------------------------------------------------*/
 /*        Transactional-Execution Facility Condition Codes           */
@@ -303,6 +310,7 @@ const char* txf_why_str( char* buffer, int buffsize, int why );
 bool is_TXF_model( U16 cpumodel );
 void defsym_TXF_models();
 void txf_model_warning( bool txf_enabled_or_enabling_txf );
+void txf_set_timerint( bool txf_enabled_or_enabling_txf );
 
 /*-------------------------------------------------------------------*/
 /*               Why transaction was aborted codes                   */

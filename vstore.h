@@ -1,4 +1,5 @@
 /* VSTORE.H     (C) Copyright Roger Bowler, 2000-2012                */
+/*              (C) and others 2013-2021                             */
 /*               ESA/390 Virtual Storage Functions                   */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -698,7 +699,7 @@ int     len;                            /* Length for page crossing  */
                     regs->txf_aie = regs->aip + regs->txf_aie_off2;
             }
 
-            TXF_INSTRADDR_CONSTRAINT( regs->ip, regs );
+            TXF_INSTRADDR_CONSTRAINT( regs );
 
 #endif /* defined( _FEATURE_073_TRANSACT_EXEC_FACILITY ) */
 
@@ -770,7 +771,7 @@ int     len;                            /* Length for page crossing  */
             regs->txf_aie = regs->aip + regs->txf_aie_off2;
     }
 
-    TXF_INSTRADDR_CONSTRAINT( regs->ip, regs );
+    TXF_INSTRADDR_CONSTRAINT( regs );
 
 #endif /* defined( _FEATURE_073_TRANSACT_EXEC_FACILITY ) */
 

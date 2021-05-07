@@ -1,4 +1,5 @@
 /* FEATALL.H    (C) Copyright Jan Jaeger, 2000-2012                  */
+/*              (C) and others 2013-2021                             */
 /*              Architecture-dependent macro definitions             */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -62,7 +63,7 @@
 #define PANEL_REFRESH_RATE_FAST      50 /* Fast refresh rate (msecs) */
 #define PANEL_REFRESH_RATE_SLOW     500 /* Slow refresh rate (msecs) */
 
-#define MIN_TOD_UPDATE_USECS          1 /* Min TOD updt freq (usecs) */
+#define MIN_TOD_UPDATE_USECS         50 /* Min TOD updt freq (usecs) */
 #define DEF_TOD_UPDATE_USECS         50 /* Def TOD updt freq (usecs) */
 #define MAX_TOD_UPDATE_USECS    1000000 /* Max TOD updt freq (usecs) */
 

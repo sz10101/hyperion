@@ -1,4 +1,5 @@
 /* OPCODE.H     (C) Copyright Jan Jaeger, 2000-2012                  */
+/*              (C) and others 2013-2021                             */
 /*              Instruction decoding macros and prototypes           */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -997,7 +998,7 @@ do { \
   #define ABORT_TRANS( _regs, _retry, _tac )        /* (nothing) */
 
   #undef  TXF_INSTRADDR_CONSTRAINT                  /* (nothing) */
-  #define TXF_INSTRADDR_CONSTRAINT( _ip, _regs )    /* (nothing) */
+  #define TXF_INSTRADDR_CONSTRAINT( _regs )         /* (nothing) */
 
   #undef  TXF_INSTRCOUNT_CONSTRAINT                 /* (nothing) */
   #define TXF_INSTRCOUNT_CONSTRAINT( _ip, _regs )   /* (nothing) */
@@ -1015,11 +1016,11 @@ do { \
     ARCH_DEP( abort_transaction )( (_regs), (_retry), (_tac), PTT_LOC )
 
   #undef  TXF_INSTRADDR_CONSTRAINT
-  #define TXF_INSTRADDR_CONSTRAINT( _ip, _regs )                      \
+  #define TXF_INSTRADDR_CONSTRAINT( _regs )                           \
   do {                                                                \
     if (1                                                             \
       && (_regs)->txf_contran                                         \
-      && (_ip) >= (_regs)->txf_aie                                    \
+      && (_regs)->ip >= (_regs)->txf_aie                              \
     )                                                                 \
     {                                                                 \
       (_regs)->txf_why |= TXF_WHY_INSTRADDR;                          \
@@ -1060,7 +1061,7 @@ do { \
   do {                                                                \
     if ((_regs)->txf_tnd)                                             \
     {                                                                 \
-      TXF_INSTRADDR_CONSTRAINT( (_ip), (_regs) );                     \
+      TXF_INSTRADDR_CONSTRAINT( (_regs) );                            \
       (_regs)->txf_instctr++;                                         \
       TXF_INSTRCOUNT_CONSTRAINT( (_ip), (_regs) );                    \
       TXF_RAND_ABORT_CONSTRAINT( (_regs) );                           \

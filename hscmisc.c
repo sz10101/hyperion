@@ -1,5 +1,6 @@
 /* HSCMISC.C    (C) Copyright Roger Bowler, 1999-2012                */
 /*              (C) Copyright Jan Jaeger, 1999-2012                  */
+/*              (C) and others 2013-2021                             */
 /*              Miscellaneous System Command Routines                */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -180,7 +181,11 @@ BYTE    c;                              /* Character work area       */
     {
         c = regs->mainstor[aaddr++];
         j += snprintf (hbuf+j, sizeof(hbuf)-j, "%2.2X", c);
-        if ((aaddr & 0x3) == 0x0) hbuf[j++] = SPACE;
+        if ((aaddr & 0x3) == 0x0)
+        {
+            hbuf[j] = SPACE;
+            hbuf[++j] = 0;
+        }
         c = guest_to_host(c);
         if (!isprint(c)) c = '.';
         cbuf[i] = c;
@@ -537,7 +542,13 @@ char    absorr[8];                      /* Uppercase command         */
 
             /* Update absolute storage */
             regs->mainstor[aaddr] = newval[i];
-            STORAGE_KEY(aaddr, regs) |= (STORKEY_REF | STORKEY_CHANGE);
+
+#if defined( FEATURE_2K_STORAGE_KEYS )
+            STORAGE_KEY(  aaddr, regs ) |= (STORKEY_REF | STORKEY_CHANGE);
+#else
+            STORAGE_KEY1( aaddr, regs ) |= (STORKEY_REF | STORKEY_CHANGE);
+            STORAGE_KEY2( aaddr, regs ) |= (STORKEY_REF | STORKEY_CHANGE);
+#endif
         } /* end for(i) */
     }
 
@@ -729,7 +740,13 @@ size_t  totamt;                         /* Total amount to be dumped */
 
             /* Update absolute storage */
             regs->mainstor[aaddr] = newval[i];
-            STORAGE_KEY(aaddr, regs) |= (STORKEY_REF | STORKEY_CHANGE);
+
+#if defined( FEATURE_2K_STORAGE_KEYS )
+            STORAGE_KEY(  aaddr, regs ) |= (STORKEY_REF | STORKEY_CHANGE);
+#else
+            STORAGE_KEY1( aaddr, regs ) |= (STORKEY_REF | STORKEY_CHANGE);
+            STORAGE_KEY2( aaddr, regs ) |= (STORKEY_REF | STORKEY_CHANGE);
+#endif
         }
     }
 
@@ -1072,7 +1089,7 @@ char    regs_msg_buf[4*512] = {0};
                                  opcode == 0xB1 ? ACCTYPE_LRA :
                                                   ACCTYPE_READ ), "", &xcode );
 
-        MSGBUF( op1_stor_msg, MSG( HHC02326, "I", buf2 ));
+        MSGBUF( op1_stor_msg, MSG( HHC02326, "I", RTRIM( buf2 )));
     }
 
     /* Format storage at second storage operand location */
@@ -1101,7 +1118,7 @@ char    regs_msg_buf[4*512] = {0};
         ARCH_DEP( display_virt )( regs, addr2, buf2+n, sizeof( buf2 )-n-1,
                                   ar, ACCTYPE_READ, "", &xcode );
 
-        MSGBUF( op2_stor_msg, MSG( HHC02326, "I", buf2 ));
+        MSGBUF( op2_stor_msg, MSG( HHC02326, "I", RTRIM( buf2 )));
     }
 
     /* Format registers associated with the instruction */

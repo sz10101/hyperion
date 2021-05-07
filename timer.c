@@ -1,4 +1,5 @@
 /* TIMER.C      (C) Copyright Roger Bowler, 1999-2012                */
+/*              (C) and others 2013-2021                             */
 /*              Timer support functions                              */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -179,6 +180,9 @@ U64     diff;                           /* Interval                  */
 U64     halfdiff;                       /* One-half interval         */
 U64     waittime;                       /* Wait time                 */
 const U64   period = ETOD_SEC;          /* MIPS calculation period   */
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+bool    txf_PPA;                        /* true == PPA assist needed */
+#endif
 
 #define diffrate(_x,_y) \
         ((((_x) * (_y)) + halfdiff) / diff)
@@ -195,6 +199,9 @@ const U64   period = ETOD_SEC;          /* MIPS calculation period   */
 
     while (!sysblk.shutfini)
     {
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+        txf_PPA = false;                /* default until we learn otherwise */
+#endif
         /* Update TOD clock and save TOD clock value */
         now = update_tod_clock();
 
@@ -225,7 +232,7 @@ const U64   period = ETOD_SEC;          /* MIPS calculation period   */
                     /* 0% if CPU is STOPPED */
                     if (regs->cpustate == CPUSTATE_STOPPED)
                     {
-                    regs->mipsrate = regs->siosrate = regs->cpupct = 0;
+                        regs->mipsrate = regs->siosrate = regs->cpupct = 0;
                         release_lock( &sysblk.cpulock[ i ]);
                         continue;
                     }
@@ -260,6 +267,35 @@ const U64   period = ETOD_SEC;          /* MIPS calculation period   */
                     regs->cpupct = min( (diff > waittime) ?
                         diffrate(diff - waittime, 100) : 0, 100 );
 
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+                    /*
+                                     PROGRAMMING NOTE
+
+                       We are purposely NOT taking the current "txf_tnd"
+                       value into consideration here in our decision
+                       whether the "sysblk.txf_timerint" value should be
+                       used or not (as indicated by our "txf_PPA" flag)
+                       because the fact that "regs->txf_PPA" is greater
+                       than our "some help" threshold indicates that a
+                       transaction DID recently fail and thus will very
+                       likely be retried very soon!
+
+                       Thus we DON'T want to negate our whole purpose
+                       of trying to MINIMIZE timer interrupts whenever
+                       there are transactions failing and being retried!
+
+                       (Which is what WOULD happen if we caused "txf_PPA"
+                       flag to NOT get set simply because "regs->txf_tnd"
+                       happened to be false during the very brief period
+                       between when the transaction failed but before it
+                       has had a chance to be retried.)
+                    */
+                    if (0
+                        || (HOSTREGS  && HOSTREGS ->txf_PPA >= PPA_SOME_HELP_THRESHOLD)
+                        || (GUESTREGS && GUESTREGS->txf_PPA >= PPA_SOME_HELP_THRESHOLD)
+                    )
+                        txf_PPA = true; // (use rubato thread timerint)
+#endif
                 }
                 release_lock( &sysblk.cpulock[ i ]);
 
@@ -274,7 +310,16 @@ const U64   period = ETOD_SEC;          /* MIPS calculation period   */
         } /* end if (diff >= period) */
 
         /* Sleep for another timer update interval... */
-        usleep ( sysblk.timerint );
+
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+        /* Do we need to temporarily reduce the frequency of timer
+           interrupts? (By waiting slightly longer than normal?)
+        */
+        if (txf_PPA)
+            usleep( sysblk.txf_timerint );
+        else
+#endif
+            usleep ( sysblk.timerint );
 
     } /* end while */
 
@@ -286,3 +331,106 @@ const U64   period = ETOD_SEC;          /* MIPS calculation period   */
     return NULL;
 
 } /* end function timer_thread */
+
+
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+/*-------------------------------------------------------------------*/
+/*              Rubato style TIMERINT modulation                     */
+/*-------------------------------------------------------------------*/
+/* This function runs as a separate thread. It wakes up every        */
+/* interval and calculates a modulation of the TIMERINT setting      */
+/* to relax contention during phases of high transactional load.     */
+/*-------------------------------------------------------------------*/
+void* rubato_thread( void* argp )
+{
+    int    starting_timerint;           /* Starting sysblk.timerint  */
+    int    new_timerint_usecs;          /* Adjusted interval usecs   */
+    int    intervals_per_second;        /* Intervals in one second   */
+    int    i;                           /* Loop index                */
+    U32    count[5] = {0,0,0,0,0};      /* Transactions executed     */
+                                        /* during past 5 intervals   */
+    U32    max_tps_rate = 0;            /* Transactions per second   */
+
+    UNREFERENCED( argp );
+
+    /* Set our thread priority to be the same as that of CPU threads */
+    set_thread_priority( sysblk.cpuprio );
+
+    // "Thread id "TIDPAT", prio %2d, name %s started"
+    LOG_THREAD_BEGIN( RUBATO_THREAD_NAME );
+
+    sysblk.txf_counter   = 0;
+    starting_timerint    = 0;
+    intervals_per_second = MAX_TOD_UPDATE_USECS / sysblk.txf_timerint;
+
+    obtain_lock( &sysblk.rublock );
+    {
+        while (!sysblk.shutfini && sysblk.rubtid)
+        {
+            /* Detect change to starting timerint value */
+            if (sysblk.timerint != starting_timerint)
+            {
+                sysblk.txf_timerint = starting_timerint = sysblk.timerint;
+                intervals_per_second = MAX_TOD_UPDATE_USECS / sysblk.txf_timerint;
+            }
+
+            /* Create room for a new transactions count */
+            for (i=1; i < 5; i++)
+                count[i-1] = count[i];
+
+            /* Insert new transactions count into array */
+            count[4] = sysblk.txf_counter;
+            sysblk.txf_counter = 0;
+
+            /* Calculate a maximum transactions-per-second rate
+               based on our past transactions count history.
+            */
+            max_tps_rate = 0;
+            for (i=0; i < 5; i++)
+                max_tps_rate = MAX( max_tps_rate, count[i] );
+            max_tps_rate *= intervals_per_second;
+
+            /* Now adjust the timer interrupt interval correspondingly...
+               The goal is to reduce the frequency of timer interrupts
+               during periods of high transaction rates by slightly
+               increasing the interval between timer interrupts
+               (thus causing timer interrupts to occur less frequently)
+               or reducing the interval (so that they occur slightly more
+               frequently), with the minimum interval (maximum frequency)
+               being the original user specified TIMERINT value and the
+               maximum interval (minimum frequency) being one second.
+            */
+
+            /* Calculate new timer update interval based on past 5 rates */
+            new_timerint_usecs = (int) (286000.0 * log( ((double) max_tps_rate + 200.0) / 100.0 ) - 212180.0);
+
+            /* MINMAX(x,y,z): ensure x remains within range y to z */
+            MINMAX( new_timerint_usecs, MIN_TOD_UPDATE_USECS, MAX_TOD_UPDATE_USECS );
+
+            sysblk.txf_timerint = new_timerint_usecs;
+            intervals_per_second = MAX_TOD_UPDATE_USECS / sysblk.txf_timerint;
+
+            /* Now go back to sleep and wake up a little bit LATER than
+               before, or a little bit SOONER than before, before checking
+               again to see whether the period of high transaction rate
+               has finally subsided or not.
+            */
+            release_lock( &sysblk.rublock );
+            {
+                usleep( sysblk.txf_timerint );
+            }
+            obtain_lock( &sysblk.rublock );
+        }
+
+        sysblk.rubtid = 0;
+        sysblk.txf_timerint = sysblk.timerint;
+    }
+    release_lock( &sysblk.rublock );
+
+    // "Thread id "TIDPAT", prio %2d, name %s ended"
+    LOG_THREAD_END( RUBATO_THREAD_NAME );
+
+    return NULL;
+
+} /* end function rubato_thread */
+#endif /* defined( _FEATURE_073_TRANSACT_EXEC_FACILITY ) */

@@ -888,7 +888,7 @@ a real System/390.  The configuration file is an ASCII text file.
 <dd><p>
     Specifies the port number (in decimal) on which the HTTP server
     will listen. The port number must either be 80
-    or within the range 1024 - 65535 inclusive. The server is not start until a subsequent
+    or within the range 1024 - 65535 inclusive. The server is not started until a subsequent
     <code><a href="#HTTPSTRT">HTTP START</a></code> statement is found.
     <p>
     <tt>AUTH</tt> indictates that a userid and password are required to access
@@ -1103,8 +1103,9 @@ a real System/390.  The configuration file is an ASCII text file.
 <a name="MANUFACTURER"></a>
 <dt><code>MANUFACTURER &nbsp; <em>name</em></code>
 <dd><p>
-    Specifies the MANUFACTURER name returned the STSI instruction.  The default is
-    <code>HRC</code>.
+    Specifies the 1-16 character MANUFACTURER name returned the STSI instruction.
+    Valid characters are 0-9 and uppercase A-Z only.
+    The default is <code>HRC</code>.
     <p>
 
 <a name="MAXCPU"></a>
@@ -1150,7 +1151,9 @@ a real System/390.  The configuration file is an ASCII text file.
     [ <em>temp_capacity_model</em> ]
     </code>
 <dd><p>
-    Specifies the MODEL names returned by the STSI instruction.
+    Specifies the 1-16 character MODEL names returned the STSI instruction.
+    Valid characters are 0-9 and uppercase A-Z only.
+    The default is <code>EMULATOR</code>.
     <p>
     If two operands are supplied, the first is the hardware model name (CPC
     ND model) and the second is the capacity model name (CPC SI model).
@@ -1158,8 +1161,6 @@ a real System/390.  The configuration file is an ASCII text file.
     name and the capacity model name.
     The optional third and fourth operands specify the permanent capacity
     model name and the temporary capacity model name respectively.
-    <p>
-    The default is <code>EMULATOR</code>.
     <p>
 
 <a name="MODPATH"></a>
@@ -1260,27 +1261,49 @@ a real System/390.  The configuration file is an ASCII text file.
     <p>
 
 <a name="OSTAILOR"></a>
-<dt><code>OSTAILOR &nbsp; OS/390 &#124; z/OS &#124;
-    VM &#124; VSE &#124; z/VSE &#124; LINUX &#124; OpenSolaris &#124; QUIET &#124; NULL</code>
+<dt><code>OSTAILOR &nbsp; <u>DEFAULT</u> &#124; OS/390 &#124; z/OS
+    &#124; VM &#124; z/VM &#124; VSE &#124; z/VSE &#124; LINUX
+    &#124; OpenSolaris &#124; QUIET &#124; NULL</code>
 <dd><p>
     Specifies the intended operating system.  The effect of this
     parameter is to reduce control panel message traffic by
     selectively suppressing trace messages for program checks
     which are considered normal in the specified environment.
-    <code>QUIET</code> discards all exception messages.
-    <code>NULL</code> allows all exception messages to be logged.
+    <code>QUIET</code> <i>suppresses</i> all exception messages.
+    <code>NULL</code> <i>displays</i> all exception messages.
     <p>
-    Optionally prefix any value except <code>QUIET</code> or
-    <code>NULL</code> with '+' to cause the suppressions for that
+    <i>
+    QUIET should normally <i><u>never</u></i> be used in normal circumstances
+    as it hides what otherwise might be important messages needed to diagnose
+    incorrect Hercules functionality. Only use <code>QUIET</code> under the
+    guidance of Hercules product support personnel. Instead, please specify an
+    OSTAILOR value that is appropriate for the guest operating system you intend
+    to run under Hercules or else let it default by not specifying it at all.
+    </i>
+    <p>
+    If no <code>OSTAILOR</code> statement is specified at all, then <code><u>DEFAULT</u></code>
+    is used, which suppresses only program check messages for interruption codes
+    10 (segment-translation exception), 11 (page-translation exception),
+    16 (trace-table exception) and 1C (space-switch event), which are considered
+    to be completely normal and unremarkable for virtually all known mainframe
+    operating systems.
+    <p>
+    Optionally prefix any value (except <code>QUIET</code> or
+    <code>NULL</code>) with '+' to cause the suppressions for that
     environment to be combined (added) to those already specified,
     or with '-' to remove such suppressions (i.e. to allow them).
     <p>
-    If the <code>OSTAILOR</code>
-    statement is omitted, exception messages for program checks
-    10, 11, 16, and 1C are suppressed.
+    This allows you to, for example, suppress messages for both z/VM
+    as well as for z/OS too (for situations where you intend to run
+    z/OS as a guest under z/VM) by specifying two OSTAILOR statements
+    as follows:
+    <blockquote><code>
+        OSTAILOR &nbsp;z/VM</br>
+        OSTAILOR &nbsp;+Z/OS    
+    </code> </blockquote>
     <p>
     Use the <code>ostailor</code> or <code>pgmtrace</code> panel
-    commands to display or alter the current settings.
+    commands to display or fine tune the current settings.
     <p>
 
 <a name="PANOPT"></a>
@@ -1372,8 +1395,9 @@ a real System/390.  The configuration file is an ASCII text file.
 <a name="PLANT"></a>
 <dt><code>PLANT &nbsp; <em>name</em></code>
 <dd><p>
-    Specifies the PLANT name returned by the STSI instruction.  The default is
-    <code>ZZ</code>.
+    Specifies the 1-4 character PLANT name returned the STSI instruction.
+    Valid characters are 0-9 and uppercase A-Z only.
+    The default is <code>ZZ</code>.
     <p>
 
 <a name="SCSIMOUNT"></a>
@@ -1469,17 +1493,18 @@ a real System/390.  The configuration file is an ASCII text file.
     updates the TOD Clock, CPU Timer, and other architectural related
     clock/timer values.  The default interval is 50 microseconds, which
     strikes a reasonable balance between clock accuracy and overall host
-    performance. The minimum allowed value is 1 microsecond and the maximum
-    is 1000000 microseconds (i.e. one second). Also note that due to host
-    system limitations and/or design, some hosts might round or
+    performance. For performance reasons, the minimum allowed value is also
+    50 microsecond as well. The maximum value is 1000000 microseconds
+    (i.e. one second). Also note that due to host system limitations and/or
+    design, some host operating systems might round or
     <a href="https://en.wikipedia.org/wiki/Timer_coalescing">coalesce</a>
     microsecond wait intervals up to a longer millisecond interval instead.
     <p>
-    <i><b>Caution:</b> &nbsp;While a lower TIMERINT value may help
+    <i><b>CAUTION!</b> &nbsp;While a lower TIMERINT value may help
     increase the accuracy of your guest's TOD Clock and CPU Timer values,
-    it could also have a severe negative impact on the overall performance
+    it could also have a <u>severe negative impact</u> on the overall performance
     of your host operating system depending on the priority (or 'nice' value)
-    of the Hercules process itself.
+    assigned to the Hercules process itself!
     </i>
     <p>
 

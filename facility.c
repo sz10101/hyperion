@@ -1,4 +1,5 @@
 /* FACILITY.C   (C) Copyright "Fish" (David B. Trout), 2018-2019     */
+/*              (C) and others 2013-2021                             */
 /*                  Facility bit functions                           */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -1889,6 +1890,7 @@ FAC_MOD_OK_FUNC           ( modtrans )
                 return HHC00890E(  STFL_049_EXECUTION_HINT );
 
             txf_model_warning( true );
+            txf_set_timerint( true );
         }
         else if (bitno == STFL_081_PPA_IN_ORDER)
         {
@@ -1928,6 +1930,8 @@ FAC_MOD_OK_FUNC           ( modtrans )
 
             if (FACILITY_ENABLED_ARCH( HERC_TXF_RESTRICT_3, archnum ))
                 return HHC00890E( STFL_HERC_TXF_RESTRICT_3 );
+
+            txf_set_timerint( false );
         }
     }
 

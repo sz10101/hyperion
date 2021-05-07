@@ -1,5 +1,6 @@
 /* HSTRUCTS.H   (C) Copyright Roger Bowler, 1999-2012                */
 /*              (C) Copyright TurboHercules, SAS 2011                */
+/*              (C) and others 2013-2021                             */
 /*              Hercules Structure Definitions                       */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -304,6 +305,7 @@ struct REGS {                           /* Processor registers       */
                 sie_active:1,           /* SIE active   (host  only) */
                 sie_mode:1,             /* In SIE mode  (guest only) */
                 sie_pref:1;             /* Preferred-storage mode    */
+                                        /* (e.g. V=R guest)          */
 
         ALIGN_16
         U16     perc;                   /* PER code                  */
@@ -369,6 +371,7 @@ struct REGS {                           /* Processor registers       */
         bool    txf_UPGM_abort;         /* true == transaction was
                                            aborted due to TAC_UPGM   */
         int     txf_aborts;             /* Abort count               */
+        S32     txf_PPA;                /* PPA assistance level      */
         BYTE    txf_tnd;                /* Transaction nesting depth.
                                            Use txf_lock to access!   */
 
@@ -673,6 +676,11 @@ struct SYSBLK {
         int     txf_fails;              /* (only when TXF_TR_FAILS)  */
         int     txf_cpuad;              /* (only when TXF_TR_CPU)    */
 
+        TID     rubtid;                 /* Threadid for rubato timer */
+        LOCK    rublock;                /* Rubato thread lock        */
+        U32     txf_counter;            /* counts TBEGIN/TBEGINC     */
+        int     txf_timerint;           /* modulation of timerint    */
+
 #define TXF_TR_INSTR    0x80000000      // instructions
 #define TXF_TR_C        0x08000000      // constrained
 #define TXF_TR_U        0x04000000      // unconstrained
@@ -830,6 +838,7 @@ atomic_update64( &sysblk.txf_stats[ contran ? 1 : 0 ].txf_ ## ctr, +1 )
 #define PANC_BG_IDX     1               /*  Background               */
 
         int     timerint;               /* microsecs timer interval  */
+        int     cfg_timerint;           /* (value defined in config) */
         char   *pantitle;               /* Alt console panel title   */
 #if defined( OPTION_SCSI_TAPE )
         /* Access to all SCSI fields controlled by sysblk.stape_lock */

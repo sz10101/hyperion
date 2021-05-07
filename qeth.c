@@ -1,4 +1,5 @@
 /* QETH.C       (C) Copyright Jan Jaeger,   1999-2012                */
+/*              (C) and others 2013-2021                             */
 /*              OSA Express                                          */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -1852,7 +1853,7 @@ U16 offph;
                     FETCH_FW(ano,ipa_sas->hdr.ano);    /* Assist number */
                     FETCH_HW(cmd,ipa_sas->hdr.cmd);    /* Command code */
                     FETCH_HW(len,ipa_sas->hdr.len);    /* Length */
-                    MSGBUF(anoc, " 0x%08X", ano);
+                    MSGBUF(anoc, " 0x%08X", ano);      /* Assist number in hex character */
 
                     strcat( dev->dev_data, ": IPA_CMD_SETASSPARMS" );  /* Prepare the contentstring */
                     strcat( dev->dev_data, protoc );                   /* Prepare the contentstring */
@@ -1879,6 +1880,10 @@ U16 offph;
                         break;
                     case IPA_SAS_CMD_0006:       /* 0x0006 */
                         strcat( dev->dev_data, ": CMD_0006" );         /* Prepare the contentstring */
+                        strcat( dev->dev_data, anoc );                 /* Prepare the contentstring */
+                        break;
+                    case IPA_SAS_CMD_0008:       /* 0x0008 */
+                        strcat( dev->dev_data, ": CMD_0008" );         /* Prepare the contentstring */
                         strcat( dev->dev_data, anoc );                 /* Prepare the contentstring */
                         break;
                     default:
@@ -1933,6 +1938,7 @@ U16 offph;
                     case IPA_SAS_CMD_ENABLE:     /* 0x0004 */
                     case IPA_SAS_CMD_0005:       /* 0x0005 */
                     case IPA_SAS_CMD_0006:       /* 0x0006 */
+                    case IPA_SAS_CMD_0008:       /* 0x0008 */
                         STORE_HW(ipa_sas->hdr.rc,IPA_RC_OK);
                         STORE_HW(ipa->rc,IPA_RC_OK);
                         break;
@@ -3416,11 +3422,12 @@ static QRC write_buffered_packets( DEVBLK* dev, OSA_GRP *grp,
             o3hdr = (OSA_HDR3*)hdr;
             if (o3hdr->flags & HDR3_FLAGS_PASSTHRU)
             {
+                eth = (ETHFRM*)pkt;
+                FETCH_HW( hwEthernetType, eth->hwEthernetType );
+                /* */
                 if (!(o3hdr->flags & HDR3_FLAGS_IPV6))
                 {
                     /* It probably is an L2 Ethernet Frame! */
-                    eth = (ETHFRM*)pkt;
-                    FETCH_HW( hwEthernetType, eth->hwEthernetType );
                     if (hwEthernetType != ETH_TYPE_IP)
                     {
                         /* Can't write L2 Ethernet frame to L3 tun device! */
@@ -3446,6 +3453,12 @@ static QRC write_buffered_packets( DEVBLK* dev, OSA_GRP *grp,
                 /* Bump past L2 Ethernet header to actual L3 IP packet */
                 pkt += sizeof(ETHFRM);
                 pktlen -= sizeof(ETHFRM);
+                /* Bump past 802.1Q header to actual L3 IP packet */
+                if (hwEthernetType == ETH_TYPE_VLANTAG)
+                {
+                    pkt += 4;
+                    pktlen -= 4;
+                }
             }
         }
 
@@ -3884,6 +3897,10 @@ U32 mask4;
     {
         /* This code is executed for each device in the group. */
 
+
+        memset( dev->sense,        0,       sizeof( dev->sense     ));
+        memcpy( dev->devid, sense_id_bytes, sizeof( sense_id_bytes ));
+
         dev->rcd         =  &qeth_read_configuration_data;
         dev->numsense    =  32;
         dev->numdevid    =  sizeof( sense_id_bytes );
@@ -3891,9 +3908,6 @@ U32 mask4;
         dev->chptype[0]  =  CHP_TYPE_OSD;
         dev->pmcw.flag4 |=  PMCW4_Q;
         dev->fd          =  -1;
-
-        memset( dev->sense,        0,       sizeof( dev->sense     ));
-        memcpy( dev->devid, sense_id_bytes, sizeof( sense_id_bytes ));
 
         /* Setting dev->bufsize = 0xFFFF causes, on return to attach_device */
         /* in config.c, storage of size 0xFFFF bytes to be obtained, and    */
@@ -4592,9 +4606,9 @@ U32 num;                                /* Number of bytes to move   */
     /* Display various information, maybe */
     if (grp->debugmask & DBGQETHCCW)
     {
-        // "%1d:%04X %s: Code %02X: Flags %02X: Chained %02X: Count %08X: PrevCode %02X: CCWseq %d"
+        // "%1d:%04X %s: Code %02X: Flags %02X: Count %08X: Chained %02X: PrevCode %02X: CCWseq %d"
         WRMSG( HHC03992, "D", LCSS_DEVNUM,
-            dev->typname, code, flags, chained, count, prevcode, ccwseq );
+            dev->typname, code, flags, count, chained, prevcode, ccwseq );
     }
 
     /* Process depending on CCW opcode */
@@ -5277,9 +5291,9 @@ U32 num;                                /* Number of bytes to move   */
     /* Display various information, maybe */
     if (grp->debugmask & DBGQETHCCW)
     {
-        // "%1d:%04X %s: More %02X: Status %02X: Residual %08X"
+        // "%1d:%04X %s: Status %02X: Residual %08X: More %02X"
         WRMSG( HHC03993, "D", LCSS_DEVNUM,
-            dev->typname, *more, *unitstat, *residual );
+            dev->typname, *unitstat, *residual, *more );
     }
 
 } /* end function qeth_execute_ccw */

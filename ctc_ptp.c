@@ -1,4 +1,5 @@
 /* CTC_PTP.C    (C) Copyright Ian Shorter, 2011-2012                  */
+/*              (C) and others 2013-2021                             */
 /*              MPC Point-To-Point (PTP)                              */
 /*                                                                    */
 /*   Released under "The Q Public License Version 1"                  */
@@ -1939,9 +1940,7 @@ void  read_chain_buffer( DEVBLK* pDEVBLK,   U32  uCount,
             rc = raise_unsol_int( pDEVBLK, CSW_ATTN, 1000 );
             if (rc)
             {
-                // Report the bad news.
-                // HHC00102 "Error in function create_thread(): %s"
-                WRMSG(HHC00102, "E", strerror(rc));
+                // Any bad news has already been reported.
                 // Hmm... the Attention interrupt to the y-side will not be
                 // raised. The y-side's VTAM will timeout in 90 seconds.
             }
@@ -3798,7 +3797,13 @@ int  raise_unsol_int( DEVBLK* pDEVBLK, BYTE bStatus, int iDelay )
     {
         pPTPINT = alloc_storage( pDEVBLK, (int)sizeof(PTPINT) );
         if (!pPTPINT)                                  // If there is no storage
+        {
+            // Report the bad news.
+            // HHC00102 "Error in function create_thread(): %s"
+            WRMSG(HHC00102, "E", "No storage available!");
+            // Hmm... the interrupt to the y-side will not be raised.
             return -1;
+        }
     }
 
     // Initialize the PTPINT.

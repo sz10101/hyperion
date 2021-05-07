@@ -2,6 +2,7 @@
 /*              (C) Copyright Jan Jaeger, 1999-2012                  */
 /*              (C) Copyright "Fish" (David B. Trout), 2002-2009     */
 /*              (C) Copyright TurboHercules, SAS 2010-2011           */
+/*              (C) and others 2013-2021                             */
 /*              CPU functions                                        */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -676,9 +677,12 @@ int timerint_cmd( int argc, char *argv[], char *cmdline )
 
     if (argc == 2)  /* Define a new value? */
     {
-        if (CMD( argv[1], default, 7 ) || CMD( argv[1], reset, 5 ))
+        if (CMD( argv[1], DEFAULT, 7 ) || CMD( argv[1], RESET, 5 ))
         {
-            sysblk.timerint = DEF_TOD_UPDATE_USECS;
+            sysblk.timerint     = DEF_TOD_UPDATE_USECS;
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+            sysblk.txf_timerint = sysblk.timerint;
+#endif
             if (MLVL( VERBOSE ))
             {
                 // "%-14s set to %s"
@@ -695,7 +699,10 @@ int timerint_cmd( int argc, char *argv[], char *cmdline )
                 && timerint <= MAX_TOD_UPDATE_USECS
             )
             {
-                sysblk.timerint = timerint;
+                sysblk.timerint     = timerint;
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+                sysblk.txf_timerint = sysblk.timerint;
+#endif
                 if (MLVL( VERBOSE ))
                 {
                     char buf[25];
@@ -713,6 +720,15 @@ int timerint_cmd( int argc, char *argv[], char *cmdline )
                 rc = -1;
             }
         }
+
+#if defined( _FEATURE_073_TRANSACT_EXEC_FACILITY )
+
+        if (rc == 0 && sysblk.config_processed)
+        {
+            sysblk.cfg_timerint = sysblk.timerint;
+            txf_set_timerint( FACILITY_ENABLED_ARCH( 073_TRANSACT_EXEC, ARCH_900_IDX ));
+        }
+#endif
     }
     else if (argc == 1)
     {

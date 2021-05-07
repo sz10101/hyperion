@@ -1,5 +1,6 @@
 /* CPU.C        (C) Copyright Roger Bowler, 1994-2012                */
 /*              (C) Copyright Jan Jaeger, 1999-2012                  */
+/*              (C) and others 2013-2021                             */
 /*              ESA/390 CPU Emulator                                 */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -417,17 +418,15 @@ void ARCH_DEP( SuccessfulBranch )( REGS* regs, VADR vaddr )
         && (vaddr & (PAGEFRAME_PAGEMASK | 0x01)) == regs->AIV
     )
     {
-        /* Check for constraint BEFORE actually updating to new ip */
-        BYTE* ip = regs->aip + (vaddr - regs->AIV);
-        PTT_INF( "branch", vaddr, regs->AIV, ip );
-        TXF_INSTRADDR_CONSTRAINT( ip, regs );
-        regs->ip = ip;              /* branch to the new instruction */
+        /* Branch directly to the new instruction */
+        regs->ip = regs->aip + (vaddr - regs->AIV);
+        PTT_INF( "branch", vaddr, regs->AIV, regs->ip );
         return;
     }
 
     /* Branch target is in another page: point the PSW to the target
-       instruction and set a new 'ip' by forcing a full instruction
-       fetch from the new target.
+       instruction and force a new "regs->ip" value to get set by
+       forcing a full instruction fetch from the new target address.
     */
     regs->psw.IA = vaddr;               /* Point PSW to target instr */
     regs->aie = INVALID_AIE;            /* Force a fresh 'instfetch' */
@@ -457,20 +456,19 @@ void ARCH_DEP( SuccessfulRelativeBranch )( REGS* regs, S64 offset )
         && (regs->ip + offset) <  regs->aie
     )
     {
-        /* Check for constraint BEFORE actually updating to new ip */
-        BYTE* ip = regs->ip + offset;
+        /* Branch directly to the new instruction */
+        regs->ip = regs->ip + offset;
         PTT_INF( "rbranch <", regs->ip, offset, regs->aip );
-        TXF_INSTRADDR_CONSTRAINT( ip, regs );
-        regs->ip = ip;
         return;
     }
 
     /* Branch target is in another page: point the PSW to the target
-       instruction and set a new 'ip' by forcing a full instruction
-       fetch from the new target.
+       instruction and force a new "regs->ip" value to get set by
+       forcing a full instruction fetch from the new target address.
     */
     PTT_INF( "rbranch >", regs->psw.IA, offset, regs->execflag );
 
+    /* Point PSW to target instruction */
     if (!regs->execflag)
         regs->psw.IA = PSW_IA_FROM_IP( regs, offset );
     else
@@ -1713,21 +1711,39 @@ void (ATTR_REGPARM(1) ARCH_DEP(process_interrupt))(REGS *regs)
         }
 
         /* Process external interrupt */
-        if ( OPEN_IC_EXTPENDING(regs) )
+        if (1
+            && OPEN_IC_EXTPENDING( regs )
+#if defined( FEATURE_073_TRANSACT_EXEC_FACILITY )
+            /* Don't interrupt active transaction */
+            && (0
+                || regs->txf_tnd == 0
+                || regs->txf_PPA < PPA_MUCH_HELP_THRESHOLD
+               )
+#endif
+        )
         {
-            PERFORM_SERIALIZATION (regs);
-            PERFORM_CHKPT_SYNC (regs);
-            ARCH_DEP (perform_external_interrupt) (regs);
+            PERFORM_SERIALIZATION( regs );
+            PERFORM_CHKPT_SYNC( regs );
+            ARCH_DEP( perform_external_interrupt )( regs );
         }
 
         /* Process I/O interrupt */
         if (IS_IC_IOPENDING)
         {
-            if ( OPEN_IC_IOPENDING(regs) )
+            if (1
+                && OPEN_IC_IOPENDING( regs )
+#if defined( FEATURE_073_TRANSACT_EXEC_FACILITY )
+                /* Don't interrupt active transaction */
+                && (0
+                    || regs->txf_tnd == 0
+                    || regs->txf_PPA < PPA_MUCH_HELP_THRESHOLD
+                   )
+#endif
+            )
             {
-                PERFORM_SERIALIZATION (regs);
-                PERFORM_CHKPT_SYNC (regs);
-                ARCH_DEP (perform_io_interrupt) (regs);
+                PERFORM_SERIALIZATION( regs );
+                PERFORM_CHKPT_SYNC( regs );
+                ARCH_DEP( perform_io_interrupt )( regs );
             }
             else
                 WAKEUP_CPU_MASK(sysblk.waiting_mask);

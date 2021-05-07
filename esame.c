@@ -1,4 +1,5 @@
 /* ESAME.C      (C) Copyright Jan Jaeger, 2000-2012                  */
+/*              (C) and others 2013-2021                             */
 /*              ESAME (z/Architecture) instructions                  */
 /*                                                                   */
 /*   Released under "The Q Public License Version 1"                 */
@@ -1012,9 +1013,9 @@ U64     new;                            /* new value                 */
                     SYNCHRONIZE_CPUS( regs );
 
 #if defined( FEATURE_073_TRANSACT_EXEC_FACILITY )
-                    txf_abort_all( regs->cpuad, TXF_WHY_CSPG_INSTR, PTT_LOC );
+                    if (FACILITY_ENABLED( 073_TRANSACT_EXEC, regs ))
+                        txf_abort_all( regs->cpuad, TXF_WHY_CSPG_INSTR, PTT_LOC );
 #endif
-
                     if (regs->GR_L(r2) & 1)
                         ARCH_DEP( purge_tlb_all )();
 
@@ -1143,7 +1144,8 @@ BYTE   *mn;                             /* Mainstor address of ASCE  */
             SYNCHRONIZE_CPUS( regs );
 
 #if defined( FEATURE_073_TRANSACT_EXEC_FACILITY )
-            txf_abort_all( regs->cpuad, TXF_WHY_IDTE_INSTR, PTT_LOC );
+            if (FACILITY_ENABLED( 073_TRANSACT_EXEC, regs ))
+                txf_abort_all( regs->cpuad, TXF_WHY_IDTE_INSTR, PTT_LOC );
 #endif
             ARCH_DEP( purge_tlb_all )();
         }
@@ -1164,7 +1166,8 @@ BYTE   *mn;                             /* Mainstor address of ASCE  */
             SYNCHRONIZE_CPUS( regs );
 
 #if defined( FEATURE_073_TRANSACT_EXEC_FACILITY )
-            txf_abort_all( regs->cpuad, TXF_WHY_IDTE_INSTR, PTT_LOC );
+            if (FACILITY_ENABLED( 073_TRANSACT_EXEC, regs ))
+                txf_abort_all( regs->cpuad, TXF_WHY_IDTE_INSTR, PTT_LOC );
 #endif
             ARCH_DEP( purge_tlb_all )();
         }
@@ -1214,7 +1217,7 @@ int     acctype = ACCTYPE_LPTEA;        /* Storage access type       */
         n = USE_HOME_SPACE;
         break;
     case 4: /* Use current addressing mode (PSW bits 16-17) */
-        n = r2; /* r2 is the access register number if ARMODE */
+        n = r2; /* r2 is the access register number if AR-mode */
         break;
     default: /* Specification exception if invalid value for m4 */
         n = -1; /* makes compiler happy */
@@ -3745,7 +3748,7 @@ S32     op2;                            /* Operand-2 value           */
     
     /* Check for overflow and set condition code */
     regs->psw.cc = !((resulthi == 0x00000000 && resultlo >= 0) ||
-                     (resulthi == 0xFFFFFFFF && resultlo <  0)) ? 3
+                     (((U32)resulthi) == 0xFFFFFFFF && resultlo <  0)) ? 3
                     : resulthi == 0 && resultlo == 0 ? 0
                     : resulthi < 0 ? 1 : 2;
 
@@ -3783,7 +3786,7 @@ S64     op2;                            /* Operand-2 value           */
 
     /* Check for overflow and set condition code */
     regs->psw.cc = !((resulthi == 0x0000000000000000 && resultlo >= 0) ||
-                     (resulthi == 0xFFFFFFFFFFFFFFFF && resultlo <  0)) ? 3
+                     (((U64)resulthi) == 0xFFFFFFFFFFFFFFFF && resultlo <  0)) ? 3
                     : resulthi == 0 && resultlo == 0 ? 0
                     : resulthi < 0 ? 1 : 2;
 
@@ -3849,7 +3852,7 @@ S32     resulthi, resultlo;             /* 64-bit result             */
     
     /* Check for overflow and set condition code */
     regs->psw.cc = !((resulthi == 0x00000000 && resultlo >= 0) ||
-                     (resulthi == 0xFFFFFFFF && resultlo <  0)) ? 3
+                     (((U32)resulthi) == 0xFFFFFFFF && resultlo <  0)) ? 3
                     : resulthi == 0 && resultlo == 0 ? 0
                     : resulthi < 0 ? 1 : 2;
 
@@ -3881,7 +3884,7 @@ S64     resulthi, resultlo;             /* 128-bit result            */
     
     /* Check for overflow and set condition code */
     regs->psw.cc = !((resulthi == 0x0000000000000000 && resultlo >= 0) ||
-                     (resulthi == 0xFFFFFFFFFFFFFFFF && resultlo <  0)) ? 3
+                     (((U64)resulthi) == 0xFFFFFFFFFFFFFFFF && resultlo <  0)) ? 3
                     : resulthi == 0 && resultlo == 0 ? 0
                     : resulthi < 0 ? 1 : 2;
 
@@ -5525,7 +5528,11 @@ int     fc, rc = 0;                     /* Function / Reason Code    */
     TRAN_INSTR_CHECK( regs );
     PTT_INF("PTF",regs->GR_G(r1),0,regs->psw.IA_L);
     PRIV_CHECK(regs);
-    SIE_INTERCEPT(regs);
+
+    /* Programing note : Under SIE polarization is always horizontal */
+    /* and cannot be changed                                         */
+    /* DO NOT INTERCEPT. The underlying hypervisor will treat PTF as */
+    /*    an unknown instruction                                     */
 
     /* Specification Exception if bits 0-55 of general register R1
        are not zeros */
@@ -5542,35 +5549,59 @@ int     fc, rc = 0;                     /* Function / Reason Code    */
     switch (fc)
     {
     case 0:                     /* Request horizontal polarization */
-        if (sysblk.topology == TOPOLOGY_HORIZ) {
-            regs->psw.cc = 2;   /* Request rejected */
-            rc = 1;             /* Already polarized as specified */
-        } else {
-            sysblk.topology = TOPOLOGY_HORIZ;
-            sysblk.topchnge = 1;
-            regs->psw.cc = 0;
-            rc = 0;
+        if(SIE_MODE(regs))
+        {
+            regs->psw.cc=2;
+            regs->psw.cc=1; /* Already horizontal */
+        }
+        else
+        {
+                if (sysblk.topology == TOPOLOGY_HORIZ) {
+                    regs->psw.cc = 2;   /* Request rejected */
+                    rc = 1;             /* Already polarized as specified */
+                } else {
+                    sysblk.topology = TOPOLOGY_HORIZ;
+                    sysblk.topchnge = 1;
+                    regs->psw.cc = 0;
+                    rc = 0;
+                }
         }
         break;
 
     case 1:                     /* Request vertical polarization */
-        if (sysblk.topology == TOPOLOGY_VERT) {
-            regs->psw.cc = 2;   /* Request rejected */
-            rc = 1;             /* Already polarized as specified */
-        } else {
-            sysblk.topology = TOPOLOGY_VERT;
-            sysblk.topchnge = 1;
-            regs->psw.cc = 0;
-            rc = 0;
+        if(SIE_MODE(regs))
+        {
+            regs->psw.cc=2;
+            rc=0;               /* Unspecified reason (not allowed */
+        }
+        else
+        {
+                if (sysblk.topology == TOPOLOGY_VERT) {
+                    regs->psw.cc = 2;   /* Request rejected */
+                    rc = 1;             /* Already polarized as specified */
+                } else {
+                    sysblk.topology = TOPOLOGY_VERT;
+                    sysblk.topchnge = 1;
+                    regs->psw.cc = 0;
+                    rc = 0;
+                }
         }
         break;
 
     case 2:                     /* Check topology-change status */
-        OBTAIN_INTLOCK(regs);
-        regs->psw.cc = sysblk.topchnge ? 1    /* (report was pending) */
-                                       : 0;   /* (report not pending) */
-        sysblk.topchnge = 0;                  /* (clear pending flag) */
-        RELEASE_INTLOCK(regs);
+        if(SIE_MODE(regs))
+        {
+            /* Not chnaged (cannot be changed) */
+            regs->psw.cc=0;
+        }
+        else
+        {
+                OBTAIN_INTLOCK(regs);
+                regs->psw.cc = sysblk.topchnge ? 1    /* (report was pending) */
+                                               : 0;   /* (report not pending) */
+                sysblk.topchnge = 0;                  /* (clear pending flag) */
+                RELEASE_INTLOCK(regs);
+        }
         break;
 
     default:
@@ -5639,7 +5670,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
 #endif /*defined(_FEATURE_ZSIE)*/
                   ) && SIE_STATE_BIT_ON(regs, RCPO2, RCPBY))
                 {
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                     storkey = STORAGE_KEY(n, regs);
 #else
                     storkey = STORAGE_KEY1(n, regs)
@@ -5647,7 +5678,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
 #endif
                                                                     ;
                         /* Reset the reference bit in the storage key */
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                     STORAGE_KEY(n, regs) &= ~(STORKEY_REF);
 #else
                     STORAGE_KEY1(n, regs) &= ~(STORKEY_REF);
@@ -5708,7 +5739,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
                                              HOSTREGS, ACCTYPE_SIE))
                     {
                         ra = APPLY_PREFIXING(HOSTREGS->dat.raddr, HOSTREGS->PX);
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                         realkey = STORAGE_KEY(ra, regs) & (STORKEY_REF);
 #else
                         realkey = (STORAGE_KEY1(ra, regs) | STORAGE_KEY2(ra, regs))
@@ -5716,7 +5747,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
 #endif
                         /* Reset the reference and change bits in
                            the real machine storage key */
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                         STORAGE_KEY(ra, regs) &= ~(STORKEY_REF);
 #else
                         STORAGE_KEY1(ra, regs) &= ~(STORKEY_REF);
@@ -5741,7 +5772,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
             }
             else
             {
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                 storkey = STORAGE_KEY(n, regs);
 #else
                 storkey = STORAGE_KEY1(n, regs)
@@ -5749,7 +5780,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
 #endif
                                     ;
                 /* Reset the reference bit in the storage key */
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                 STORAGE_KEY(n, regs) &= ~(STORKEY_REF);
 #else
                 STORAGE_KEY1(n, regs) &= ~(STORKEY_REF);
@@ -5760,7 +5791,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
         else
 #endif /*defined(_FEATURE_SIE)*/
         {
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
             storkey = STORAGE_KEY(n, regs);
 #else
             storkey = STORAGE_KEY1(n, regs)
@@ -5768,7 +5799,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
 #endif
                                                              ;
             /* Reset the reference bit in the storage key */
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
         STORAGE_KEY(n, regs) &= ~(STORKEY_REF);
 #else
         STORAGE_KEY1(n, regs) &= ~(STORKEY_REF);
@@ -5790,7 +5821,7 @@ U64     bitmap;                         /* Bitmap to be ret in r1    */
 
     regs->GR_G(r1) = bitmap;
 
-} /* end DEF_INST(reset_reference_bits_multiple) */
+} /* end DEF_INST( reset_reference_bits_multiple ) */
 #endif /* defined( FEATURE_066_RES_REF_BITS_MULT_FACILITY ) */
 
 
@@ -5978,7 +6009,7 @@ int     page_offset;                    /* Low order bits of R2      */
                             n = APPLY_PREFIXING(HOSTREGS->dat.raddr, HOSTREGS->PX);
 
                             protkey =
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                                       STORAGE_KEY(n, regs)
 #else
                                       (STORAGE_KEY1(n, regs) | STORAGE_KEY2(n, regs))
@@ -6006,7 +6037,7 @@ int     page_offset;                    /* Low order bits of R2      */
                         if(!sr)
 #endif /*defined(_FEATURE_STORAGE_KEY_ASSIST)*/
                         {
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                             STORAGE_KEY(aaddr, regs) &= STORKEY_BADFRM;
                             STORAGE_KEY(aaddr, regs) |= sk
                                             & (STORKEY_KEY | STORKEY_FETCH);
@@ -6024,7 +6055,7 @@ int     page_offset;                    /* Low order bits of R2      */
                 else
                 {
                     /* Update the storage key from R1 register bits 24-30 */
-#if !defined(FEATURE_2K_STORAGE_KEYS)
+#if !defined( _FEATURE_2K_STORAGE_KEYS )
                     STORAGE_KEY(aaddr, regs) &= STORKEY_BADFRM;
                     STORAGE_KEY(aaddr, regs) |= sk & ~(STORKEY_BADFRM);
 #else
@@ -6040,7 +6071,7 @@ int     page_offset;                    /* Low order bits of R2      */
             {
 
                 /* Update the storage key from R1 register bits 24-30 */
-#if defined(FEATURE_4K_STORAGE_KEYS) && !defined(FEATURE_2K_STORAGE_KEYS)
+#if defined( FEATURE_4K_STORAGE_KEYS ) && !defined( _FEATURE_2K_STORAGE_KEYS )
                 STORAGE_KEY(aaddr, regs) &= STORKEY_BADFRM;
                 STORAGE_KEY(aaddr, regs) |= sk & ~(STORKEY_BADFRM);
 #else
@@ -6091,7 +6122,7 @@ int     page_offset;                    /* Low order bits of R2      */
 
     }
 
-} /* end DEF_INST(perform_frame_management_function) */
+} /* end DEF_INST( perform_frame_management_function ) */
 #endif /* defined( FEATURE_008_ENHANCED_DAT_FACILITY_1 ) */
 
 

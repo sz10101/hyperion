@@ -617,9 +617,11 @@
   ::  Make it clear this Hercules is NOT any of the other ones
   ::  by embedding "-SDL" into the "VERSION" string. Same idea
   ::  for "-DEV" indicating a development version.
+    ::  Make it ALSO apparent that this is my (SZoppi) LOCAL Version
+  ::  and appending the string "-SZ" to the end of the "VERSION".
   ::--------------------------------------------------------------
 
-  set VERSION="%VERS_MAJ%.%VERS_INT%.%VERS_MIN%.%VERS_BLD%-SDL%dev_string%%modified_str%"
+  set VERSION="%VERS_MAJ%.%VERS_INT%.%VERS_MIN%.%VERS_BLD%-SDL%dev_string%%modified_str%-SZ"
 
   %exit%
 

@@ -282,6 +282,7 @@ DLL_EXPORT int read_awstape (DEVBLK *dev, BYTE *buf, BYTE *unitstat,BYTE code)
 {
 int             rc;                     /* Return code               */
 AWSTAPE_BLKHDR  awshdr;                 /* AWSTAPE block header      */
+AWSTAPE_BLKHDR  awshdr2;                /* AWSTAPE block header2     */
 off_t           blkpos;                 /* Offset of block header    */
 int             blklen = 0;             /* Total length of block     */
 U16             seglen;                 /* Data length of segment    */
@@ -355,6 +356,19 @@ U16             seglen;                 /* Data length of segment    */
             build_senseX(TAPE_BSENSE_BLOCKSHORT,dev,unitstat,code);
             return -1;
         }
+
+        /* Pre-read the next block header */
+        rc = readhdr_awstape(dev, blkpos, &awshdr2, unitstat, code);
+        if (rc < 0) return -1;
+    	
+        /* Compare the forward pointer to the backward pointer */
+    	if (awshdr2.prvblkl != awshdr.curblkl) 
+    	{
+            // "%1d:%04X Tape file %s, type %s: error in function %s, offset 0x%16.16"PRIX64": %s"
+            WRMSG(HHC00206, "W", LCSS_DEVNUM, dev->filename, "aws", "read_awstape()", blkpos, " Off-By-One Adjustment being attempted.");
+            /* the bug in the tap format is an "off by one" error */
+            blkpos += 1;
+    	}
 
         /* Accumulate the total block length */
         blklen += seglen;

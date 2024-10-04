@@ -77,9 +77,10 @@ static BYTE bfr [ MAX_PLC2_BLKSIZE ];     /* Primary I/O buffer      */
 static BYTE wrk [ MAX_PLC2_BLKSIZE ];     /* host -> guest translate */
 
 /* Valid character for CMS file-names and file-types                 */
+/* SJZ20211106: added a PERIOD(.) which is indeed valid              */
 static const char* validchars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                                 "0123456789"
-                                "$#@+-:_";
+                                "$#@+-:_.";
 
 /* Valid CMS file-mode numbers                                       */
 static const char* validfmnum = "0123456";
@@ -1663,7 +1664,8 @@ static int parse_ctlfile_stmt( OPTIONS* opts, const char* orec, int recno )
     if (0
         || parse_args((rec = strdup( orec )), MAX_ARGS, argv, &argc ) == 0
         || argv[0][0] == '*'
-        || argv[0][0] == '#'
+        // || argv[0][0] == '#'  // This is a bug - Legal Filenames in VM can begin with
+                                 // the Octothorpe (#) 
         || argv[0][0] == ';'
     )
     {
@@ -2114,10 +2116,16 @@ static int doscan( OPTIONS* opts )
 /*-------------------------------------------------------------------*/
 /*        Write structured file record size if appropriate           */
 /*-------------------------------------------------------------------*/
-static int write_siz( FILE* ofile, const BYTE* p, char filefmt, const char* name )
+static int write_siz( FILE* ofile, const BYTE* p, char filefmt, const char* name, const char recfm )
 {
     int rc = 0;
-    if (filefmt == 'S')  // ('S'tructured)
+    /*
+    	If the requested is "B"inary 
+    	but the Internal Record Format is "V"ariable
+    	then we cannot really discern Line Length - so we MUST 
+    	treat "B"inary files with RecFM "V" as "S"tructured
+    */
+    if (filefmt == 'S' || (filefmt == 'B' && recfm == 'V') )  // ('S'tructured) ('B'inary) ('V'ariable)
     {
         if (fwrite( p, 1, sizeof( HWORD ), ofile ) != sizeof( HWORD ))
         {
@@ -2371,7 +2379,7 @@ static int load_file
             rsz = fetch_hw( recsize );
             ASSERT( rsz > 0 && rsz <= *recl );
 
-            if ((rc = write_siz( ofile, recsize, ctl->filefmt, ctl->hostfile )) == 0)
+            if ((rc = write_siz( ofile, recsize, ctl->filefmt, ctl->hostfile, recfm )) == 0)
             {
                 rec  +=  sizeof( HWORD );
                 rem  -=  sizeof( HWORD );
